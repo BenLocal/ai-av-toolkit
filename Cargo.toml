@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 rodio = "0.21.1"
+sherpa-rs = "0.6.8"
