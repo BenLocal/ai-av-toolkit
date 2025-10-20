@@ -1,0 +1,7 @@
+[package]
+name = "ai-av-toolkit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rodio = "0.21.1"
