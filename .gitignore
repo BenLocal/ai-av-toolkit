@@ -2,3 +2,5 @@
 
 
 *.tar.bz2
+sherpa-onnx-sense-*
+silero_vad.onnx
