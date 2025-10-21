@@ -21,6 +21,7 @@ dependencies = [
 name = "ai-av-toolkit"
 version = "0.1.0"
 dependencies = [
+ "hound",
  "rodio",
  "sherpa-rs",
 ]

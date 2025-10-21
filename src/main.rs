@@ -1,5 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    fs::File,
+    io::BufWriter,
+    sync::{Arc, Mutex},
+};
 
+use hound::{WavSpec, WavWriter};
 use rodio::{
     DeviceTrait as _,
     cpal::{
@@ -12,10 +17,34 @@ use sherpa_rs::{
     silero_vad::{SileroVad, SileroVadConfig},
 };
 
+// This is a simple audio processing application that uses cpal for audio input
+// windows:
+// ./target/debug/ai-av-toolkit.exe sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt silero_vad.onnx
 fn main() {
+    let model = std::env::args()
+        .nth(1)
+        .expect("Missing model path argument");
+    let token = std::env::args()
+        .nth(2)
+        .expect("Missing token path argument");
+    let vad_model = std::env::args()
+        .nth(3)
+        .expect("Missing VAD model path argument");
     list_audio_devices();
 
-    let recognizer = Arc::new(Mutex::new(SileroVadRecognizer::new()));
+    let recognizer = Arc::new(Mutex::new(SileroVadRecognizer::new(
+        &model, &token, &vad_model,
+    )));
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: 16000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let wav_writer = Arc::new(Mutex::new(
+        WavWriter::create("recorded_audio.wav", spec).expect("Failed to create WAV file"),
+    ));
+
     let host = cpal::default_host();
     let input_device = match host.default_input_device() {
         Some(device) => device,
@@ -24,13 +53,29 @@ fn main() {
             return;
         }
     };
+    println!("Input device: {}", input_device.name().unwrap());
     let config = input_device.default_input_config().unwrap();
 
     let sample_format = config.sample_format();
     let stream = match sample_format {
-        cpal::SampleFormat::F32 => build_stream::<f32>(&input_device, &config, recognizer.clone()),
-        cpal::SampleFormat::I16 => build_stream::<i16>(&input_device, &config, recognizer.clone()),
-        cpal::SampleFormat::U16 => build_stream::<u16>(&input_device, &config, recognizer.clone()),
+        cpal::SampleFormat::F32 => build_stream::<f32>(
+            &input_device,
+            &config,
+            recognizer.clone(),
+            wav_writer.clone(),
+        ),
+        cpal::SampleFormat::I16 => build_stream::<i16>(
+            &input_device,
+            &config,
+            recognizer.clone(),
+            wav_writer.clone(),
+        ),
+        cpal::SampleFormat::U16 => build_stream::<u16>(
+            &input_device,
+            &config,
+            recognizer.clone(),
+            wav_writer.clone(),
+        ),
         _ => panic!("Unsupported sample format"),
     };
 
@@ -41,11 +86,18 @@ fn main() {
     std::io::stdin().read_line(&mut input).unwrap();
 
     println!("停止麦克风活动");
+
+    // if let Ok(mut writer) = wav_writer.lock() {
+    //     writer.finalize().expect("Failed to finalize WAV file");
+    // }
+    println!("音频已保存到 recorded_audio.wav");
 }
+
 fn build_stream<T>(
     device: &cpal::Device,
     config: &cpal::SupportedStreamConfig,
     recognizer: Arc<Mutex<SileroVadRecognizer>>,
+    _wav_writer: Arc<Mutex<WavWriter<BufWriter<File>>>>,
 ) -> Stream
 where
     T: cpal::Sample + cpal::SizedSample,
@@ -60,7 +112,6 @@ where
         .build_input_stream(
             &config.clone().into(),
             {
-                let recognizer = recognizer.clone();
                 move |data: &[T], _info: &InputCallbackInfo| {
                     let samples: Vec<f32> = data
                         .iter()
@@ -72,6 +123,14 @@ where
                     } else {
                         mono_samples
                     };
+
+                    // 写入 WAV 文件
+                    // if let Ok(mut writer) = wav_writer.lock() {
+                    //     for &sample in &resampled {
+                    //         let i16_sample = (sample * 32767.0).clamp(-32768.0, 32767.0) as i16;
+                    //         writer.write_sample(i16_sample).ok();
+                    //     }
+                    // }
 
                     if let Ok(mut recognizer) = recognizer.lock() {
                         process_audio_data(&resampled, &mut *recognizer);
@@ -123,7 +182,6 @@ fn list_audio_devices() {
 }
 
 fn process_audio_data(samples: &[f32], recognizer: &mut SileroVadRecognizer) {
-    println!("Processing {} samples at 16kHz", samples.len());
     recognizer.vad.accept_waveform(samples.to_vec());
     while !recognizer.vad.is_empty() {
         let segment = recognizer.vad.front();
@@ -185,11 +243,12 @@ pub struct SileroVadRecognizer {
 }
 
 impl SileroVadRecognizer {
-    pub fn new() -> Self {
+    pub fn new(model: &str, token: &str, vad_model: &str) -> Self {
         let config = sherpa_rs::sense_voice::SenseVoiceConfig {
-            model: "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx".into(),
-            tokens: "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt".into(),
+            model: model.into(),
+            tokens: token.into(),
             provider: Some("cpu".into()),
+            num_threads: Some(8),
             debug: true,
             ..Default::default()
         };
@@ -197,7 +256,7 @@ impl SileroVadRecognizer {
         let recognizer: SenseVoiceRecognizer = SenseVoiceRecognizer::new(config).unwrap();
 
         let vad_config = SileroVadConfig {
-            model: "silero_vad.onnx".into(),
+            model: vad_model.into(),
             debug: true,
             ..Default::default()
         };

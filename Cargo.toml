@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 rodio = { version = "0.21.1", features = ["symphonia-all"] }
 sherpa-rs = "0.6.8"
+hound = "3.5"
