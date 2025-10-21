@@ -1,10 +1,5 @@
-use std::{
-    fs::File,
-    io::BufWriter,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use hound::{WavSpec, WavWriter};
 use rodio::{
     DeviceTrait as _,
     cpal::{
@@ -35,15 +30,6 @@ fn main() {
     let recognizer = Arc::new(Mutex::new(SileroVadRecognizer::new(
         &model, &token, &vad_model,
     )));
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate: 16000,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let wav_writer = Arc::new(Mutex::new(
-        WavWriter::create("recorded_audio.wav", spec).expect("Failed to create WAV file"),
-    ));
 
     let host = cpal::default_host();
     let input_device = match host.default_input_device() {
@@ -58,24 +44,9 @@ fn main() {
 
     let sample_format = config.sample_format();
     let stream = match sample_format {
-        cpal::SampleFormat::F32 => build_stream::<f32>(
-            &input_device,
-            &config,
-            recognizer.clone(),
-            wav_writer.clone(),
-        ),
-        cpal::SampleFormat::I16 => build_stream::<i16>(
-            &input_device,
-            &config,
-            recognizer.clone(),
-            wav_writer.clone(),
-        ),
-        cpal::SampleFormat::U16 => build_stream::<u16>(
-            &input_device,
-            &config,
-            recognizer.clone(),
-            wav_writer.clone(),
-        ),
+        cpal::SampleFormat::F32 => build_stream::<f32>(&input_device, &config, recognizer.clone()),
+        cpal::SampleFormat::I16 => build_stream::<i16>(&input_device, &config, recognizer.clone()),
+        cpal::SampleFormat::U16 => build_stream::<u16>(&input_device, &config, recognizer.clone()),
         _ => panic!("Unsupported sample format"),
     };
 
@@ -84,20 +55,13 @@ fn main() {
     println!("麦克风已激活，按Enter键停止...");
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
-
     println!("停止麦克风活动");
-
-    // if let Ok(mut writer) = wav_writer.lock() {
-    //     writer.finalize().expect("Failed to finalize WAV file");
-    // }
-    println!("音频已保存到 recorded_audio.wav");
 }
 
 fn build_stream<T>(
     device: &cpal::Device,
     config: &cpal::SupportedStreamConfig,
     recognizer: Arc<Mutex<SileroVadRecognizer>>,
-    _wav_writer: Arc<Mutex<WavWriter<BufWriter<File>>>>,
 ) -> Stream
 where
     T: cpal::Sample + cpal::SizedSample,
@@ -123,14 +87,6 @@ where
                     } else {
                         mono_samples
                     };
-
-                    // 写入 WAV 文件
-                    // if let Ok(mut writer) = wav_writer.lock() {
-                    //     for &sample in &resampled {
-                    //         let i16_sample = (sample * 32767.0).clamp(-32768.0, 32767.0) as i16;
-                    //         writer.write_sample(i16_sample).ok();
-                    //     }
-                    // }
 
                     if let Ok(mut recognizer) = recognizer.lock() {
                         process_audio_data(&resampled, &mut *recognizer);
