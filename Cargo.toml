@@ -1,8 +1,7 @@
-[package]
-name = "ai-av-toolkit"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = ["ai-audio-toolkit"]
+resolver = "3"
 
-[dependencies]
-rodio = { version = "0.21.1", features = ["symphonia-all"] }
+[workspace.dependencies]
+rodio = "0.21.1"
 sherpa-rs = "0.6.8"

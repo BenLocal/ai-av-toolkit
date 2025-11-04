@@ -5,11 +5,14 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug executable 'ai-av-toolkit'",
+      "name": "Debug executable 'ai-audio-toolkit'",
       "type": "lldb",
       "request": "launch",
       "cargo": {
-        "args": ["run", "--bin=ai-av-toolkit"]
+        "args": [
+          "run",
+          "--bin=ai-audio-toolkit"
+        ]
       },
       "args": [
         "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx",
@@ -22,7 +25,10 @@
       "type": "lldb",
       "request": "launch",
       "cargo": {
-        "args": ["test", "--bin=ai-av-toolkit"]
+        "args": [
+          "test",
+          "--bin=ai-av-toolkit"
+        ]
       }
     }
   ]

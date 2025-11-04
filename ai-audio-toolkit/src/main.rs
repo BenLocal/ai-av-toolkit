@@ -27,9 +27,7 @@ fn main() {
         .expect("Missing VAD model path argument");
     list_audio_devices();
 
-    let recognizer = Arc::new(Mutex::new(SileroVadRecognizer::new(
-        &model, &token, &vad_model,
-    )));
+    let mut recognizer = SileroVadRecognizer::new(&model, &token, &vad_model);
 
     let host = cpal::default_host();
     let input_device = match host.default_input_device() {
@@ -41,12 +39,20 @@ fn main() {
     };
     println!("Input device: {}", input_device.name().unwrap());
     let config = input_device.default_input_config().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<f32>>();
+
+    // 启动后台处理线程
+    std::thread::spawn(move || {
+        while let Ok(samples) = rx.recv() {
+            process_audio_data(&samples, &mut recognizer);
+        }
+    });
 
     let sample_format = config.sample_format();
     let stream = match sample_format {
-        cpal::SampleFormat::F32 => build_stream::<f32>(&input_device, &config, recognizer.clone()),
-        cpal::SampleFormat::I16 => build_stream::<i16>(&input_device, &config, recognizer.clone()),
-        cpal::SampleFormat::U16 => build_stream::<u16>(&input_device, &config, recognizer.clone()),
+        cpal::SampleFormat::F32 => build_stream::<f32>(&input_device, &config, tx),
+        cpal::SampleFormat::I16 => build_stream::<i16>(&input_device, &config, tx),
+        cpal::SampleFormat::U16 => build_stream::<u16>(&input_device, &config, tx),
         _ => panic!("Unsupported sample format"),
     };
 
@@ -61,7 +67,7 @@ fn main() {
 fn build_stream<T>(
     device: &cpal::Device,
     config: &cpal::SupportedStreamConfig,
-    recognizer: Arc<Mutex<SileroVadRecognizer>>,
+    tx: std::sync::mpsc::Sender<Vec<f32>>,
 ) -> Stream
 where
     T: cpal::Sample + cpal::SizedSample,
@@ -88,9 +94,7 @@ where
                         mono_samples
                     };
 
-                    if let Ok(mut recognizer) = recognizer.lock() {
-                        process_audio_data(&resampled, &mut *recognizer);
-                    }
+                    let _ = tx.send(resampled);
                 }
             },
             move |err| {
@@ -145,6 +149,11 @@ fn process_audio_data(samples: &[f32], recognizer: &mut SileroVadRecognizer) {
         println!("✅ Text: {}", result.text);
         recognizer.vad.pop();
     }
+
+    // let result = recognizer.recognizer.transcribe(16000, &samples);
+    // if !result.text.is_empty() {
+    //     println!("✅ Text: {}", result.text);
+    // }
 }
 
 fn convert_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
@@ -214,6 +223,12 @@ impl SileroVadRecognizer {
         let vad_config = SileroVadConfig {
             model: vad_model.into(),
             debug: true,
+            min_silence_duration: 0.1,
+            min_speech_duration: 0.1,
+            max_speech_duration: 60.0 * 10.0,
+            threshold: 0.7,
+            window_size: 512,
+            sample_rate: 16000,
             ..Default::default()
         };
 
