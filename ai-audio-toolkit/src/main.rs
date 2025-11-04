@@ -223,10 +223,10 @@ impl SileroVadRecognizer {
         let vad_config = SileroVadConfig {
             model: vad_model.into(),
             debug: true,
-            min_silence_duration: 0.1,
-            min_speech_duration: 0.1,
-            max_speech_duration: 60.0 * 10.0,
-            threshold: 0.7,
+            min_silence_duration: 0.5,
+            min_speech_duration: 0.25,
+            max_speech_duration: 20.0,
+            threshold: 0.5,
             window_size: 512,
             sample_rate: 16000,
             ..Default::default()
